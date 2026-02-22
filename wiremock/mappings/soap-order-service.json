@@ -1,0 +1,87 @@
+{
+  "mappings": [
+    {
+      "name": "CreateOrder - Success",
+      "request": {
+        "method": "POST",
+        "url": "/ws/orders",
+        "headers": {
+          "Content-Type": { "contains": "text/xml" },
+          "SOAPAction": { "equalTo": "http://app2.example.com/orders/CreateOrder" }
+        },
+        "bodyPatterns": [
+          { "contains": "CreateOrderRequest" },
+          { "contains": "customerId" }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8"
+        },
+        "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns=\"http://app2.example.com/orders\"><soap:Body><ns:CreateOrderResponse><ns:orderId>ORD-2026-00042</ns:orderId><ns:status>Confirmed</ns:status><ns:estimatedDelivery>2026-03-05T10:00:00Z</ns:estimatedDelivery><ns:totalAmount>299.97</ns:totalAmount><ns:confirmationNumber>CONF-ABC-12345</ns:confirmationNumber></ns:CreateOrderResponse></soap:Body></soap:Envelope>"
+      }
+    },
+    {
+      "name": "CreateOrder - SOAP Fault (Invalid Customer)",
+      "request": {
+        "method": "POST",
+        "url": "/ws/orders",
+        "headers": {
+          "SOAPAction": { "equalTo": "http://app2.example.com/orders/CreateOrder" }
+        },
+        "bodyPatterns": [
+          { "contains": "CreateOrderRequest" },
+          { "contains": "INVALID-CUSTOMER" }
+        ]
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8"
+        },
+        "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><soap:Fault><faultcode>soap:Client</faultcode><faultstring>Customer not found: INVALID-CUSTOMER</faultstring><detail><errorCode>CUST_NOT_FOUND</errorCode></detail></soap:Fault></soap:Body></soap:Envelope>"
+      }
+    },
+    {
+      "name": "GetOrderStatus - Success",
+      "request": {
+        "method": "POST",
+        "url": "/ws/orders",
+        "headers": {
+          "SOAPAction": { "equalTo": "http://app2.example.com/orders/GetOrderStatus" }
+        },
+        "bodyPatterns": [
+          { "contains": "GetOrderStatusRequest" },
+          { "contains": "ORD-2026-00042" }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8"
+        },
+        "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns=\"http://app2.example.com/orders\"><soap:Body><ns:GetOrderStatusResponse><ns:orderId>ORD-2026-00042</ns:orderId><ns:status>Confirmed</ns:status><ns:lastUpdated>2026-02-22T14:30:00Z</ns:lastUpdated></ns:GetOrderStatusResponse></soap:Body></soap:Envelope>"
+      }
+    },
+    {
+      "name": "CreateOrder - Timeout Simulation",
+      "priority": 10,
+      "request": {
+        "method": "POST",
+        "url": "/ws/orders/slow",
+        "headers": {
+          "SOAPAction": { "equalTo": "http://app2.example.com/orders/CreateOrder" }
+        }
+      },
+      "response": {
+        "status": 200,
+        "fixedDelayMilliseconds": 30000,
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8"
+        },
+        "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><ns:CreateOrderResponse xmlns:ns=\"http://app2.example.com/orders\"><ns:orderId>ORD-TIMEOUT</ns:orderId><ns:status>Confirmed</ns:status></ns:CreateOrderResponse></soap:Body></soap:Envelope>"
+      }
+    }
+  ]
+}

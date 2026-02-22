@@ -1,0 +1,297 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly staging + drift detection runs at 2 AM UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: "Which test suite to run"
+        required: true
+        default: "ci"
+        type: choice
+        options:
+          - ci
+          - staging
+          - e2e
+          - all
+          - drift-check
+
+env:
+  NODE_VERSION: "20"
+  WIREMOCK_VERSION: "3.9.1"
+
+# ── Jobs ───────────────────────────────────────────────────────────────────
+
+jobs:
+  # ════════════════════════════════════════════════════════════════════════
+  # CI Tests: Contract + Schema + Virtual Integration (no staging needed)
+  # Runs on every push/PR — fast feedback loop
+  # ════════════════════════════════════════════════════════════════════════
+  ci-tests:
+    name: CI Tests (Contract + Schema + Virtual)
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.test_suite == 'ci' ||
+      github.event.inputs.test_suite == 'all'
+
+    services:
+      wiremock:
+        image: wiremock/wiremock:${{ env.WIREMOCK_VERSION }}
+        ports:
+          - 8080:8080
+        options: >-
+          --health-cmd "curl -f http://localhost:8080/__admin/health || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        volumes:
+          - ${{ github.workspace }}/wiremock:/home/wiremock
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Wait for WireMock
+        run: |
+          echo "Waiting for WireMock to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080/__admin/health > /dev/null 2>&1; then
+              echo "WireMock is ready!"
+              break
+            fi
+            echo "Attempt $i/30..."
+            sleep 2
+          done
+
+      - name: Load WireMock mappings
+        run: |
+          for mapping in wiremock/mappings/*.json; do
+            echo "Loading mapping: $mapping"
+            curl -s -X POST http://localhost:8080/__admin/mappings/import \
+              -H "Content-Type: application/json" \
+              -d @"$mapping"
+          done
+
+      # ── Contract Tests (Pact) ──────────────────────────────────────────
+      - name: Run Pact Consumer Contract Tests
+        run: npm run test:contract
+        env:
+          CI: true
+
+      - name: Upload Pact contracts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pact-contracts
+          path: pacts/
+          retention-days: 30
+
+      # ── Schema Validation Tests ────────────────────────────────────────
+      - name: Run Schema Validation Tests
+        run: npm run test:schema
+        env:
+          WIREMOCK_URL: http://localhost:8080
+
+      # ── Virtual Integration Tests ──────────────────────────────────────
+      - name: Run Virtual Integration Tests
+        run: npm run test:virtual
+        env:
+          WIREMOCK_URL: http://localhost:8080
+
+      # ── Reports ────────────────────────────────────────────────────────
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-test-reports
+          path: |
+            reports/
+            test-results/
+          retention-days: 14
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Staging Tests: Real integration against staging environments
+  # Runs nightly or on manual trigger
+  # ════════════════════════════════════════════════════════════════════════
+  staging-tests:
+    name: Staging Integration Tests
+    runs-on: ubuntu-latest
+    needs: ci-tests
+    if: >
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.test_suite == 'staging' ||
+        github.event.inputs.test_suite == 'all'))
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # ── SOAP Staging Tests ─────────────────────────────────────────────
+      - name: Run SOAP Staging Tests (App1 ↔ App2)
+        run: npm run test:staging
+        env:
+          APP2_STAGING_URL: ${{ secrets.APP2_STAGING_URL }}
+          APP1_BASE_URL: ${{ secrets.APP1_STAGING_URL }}
+          INTEGRATION_LAYER_URL: ${{ secrets.INTEGRATION_LAYER_URL }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USERNAME: ${{ secrets.SNOWFLAKE_USERNAME }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+
+      - name: Upload staging test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: staging-test-reports
+          path: |
+            reports/
+            test-results/
+          retention-days: 30
+
+  # ════════════════════════════════════════════════════════════════════════
+  # E2E UI Tests: Full browser-based end-to-end tests
+  # Runs nightly or on manual trigger
+  # ════════════════════════════════════════════════════════════════════════
+  e2e-tests:
+    name: E2E UI Tests
+    runs-on: ubuntu-latest
+    needs: staging-tests
+    if: >
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.test_suite == 'e2e' ||
+        github.event.inputs.test_suite == 'all'))
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E UI Tests
+        run: npm run test:e2e
+        env:
+          APP1_BASE_URL: ${{ secrets.APP1_STAGING_URL }}
+          INTEGRATION_LAYER_URL: ${{ secrets.INTEGRATION_LAYER_URL }}
+
+      - name: Upload E2E reports and traces
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-test-reports
+          path: |
+            reports/
+            test-results/
+          retention-days: 30
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Schema Drift Detection: Compare stored schemas against live APIs
+  # Runs nightly to detect 3rd-party breaking changes
+  # ════════════════════════════════════════════════════════════════════════
+  schema-drift-check:
+    name: Schema Drift Detection
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.test_suite == 'drift-check' ||
+        github.event.inputs.test_suite == 'all'))
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Schema Drift Check
+        run: npm run schema:drift-check
+        env:
+          APP2_STAGING_URL: ${{ secrets.APP2_STAGING_URL }}
+          INTEGRATION_LAYER_URL: ${{ secrets.INTEGRATION_LAYER_URL }}
+
+      - name: Upload drift report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: drift-detection-report
+          path: reports/drift/
+          retention-days: 30
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Summary: Aggregate results and notify
+  # ════════════════════════════════════════════════════════════════════════
+  notify:
+    name: Test Summary & Notifications
+    runs-on: ubuntu-latest
+    needs: [ci-tests, staging-tests, e2e-tests, schema-drift-check]
+    if: always()
+
+    steps:
+      - name: Download all reports
+        uses: actions/download-artifact@v4
+        with:
+          path: all-reports/
+
+      - name: Generate summary
+        run: |
+          echo "## Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Suite | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| CI Tests (Contract + Schema + Virtual) | ${{ needs.ci-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Staging Integration Tests | ${{ needs.staging-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| E2E UI Tests | ${{ needs.e2e-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Schema Drift Detection | ${{ needs.schema-drift-check.result }} |" >> $GITHUB_STEP_SUMMARY

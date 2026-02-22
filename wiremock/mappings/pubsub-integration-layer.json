@@ -1,0 +1,99 @@
+{
+  "mappings": [
+    {
+      "name": "Integration Layer - Publish OrderCreated Event",
+      "request": {
+        "method": "POST",
+        "url": "/api/events/publish",
+        "headers": {
+          "Content-Type": { "equalTo": "application/json" }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": "$.eventType",
+            "equalTo": "OrderCreated"
+          }
+        ]
+      },
+      "response": {
+        "status": 202,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "status": "accepted",
+          "messageId": "MSG-2026-00042",
+          "topic": "orders.created",
+          "timestamp": "2026-02-22T14:30:00Z"
+        }
+      }
+    },
+    {
+      "name": "Integration Layer - Subscribe to OrderUpdated Events",
+      "request": {
+        "method": "GET",
+        "url": "/api/events/subscribe",
+        "queryParameters": {
+          "topic": { "equalTo": "orders.updated" },
+          "consumerId": { "equalTo": "app1" }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "messages": [
+            {
+              "eventId": "evt-siebel-001",
+              "eventType": "OrderUpdated",
+              "timestamp": "2026-02-22T15:00:00Z",
+              "source": "Siebel",
+              "correlationId": "corr-12345",
+              "payload": {
+                "orderId": "ORD-2026-00042",
+                "status": "Acknowledged",
+                "updatedFields": {
+                  "siebelCaseId": "SR-2026-99001"
+                },
+                "updatedBy": "siebel-system"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Integration Layer - Acknowledge Message",
+      "request": {
+        "method": "POST",
+        "url": "/api/events/acknowledge",
+        "bodyPatterns": [
+          { "matchesJsonPath": "$.messageId" }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "jsonBody": {
+          "status": "acknowledged"
+        }
+      }
+    },
+    {
+      "name": "Integration Layer - Health Check",
+      "request": {
+        "method": "GET",
+        "url": "/api/health"
+      },
+      "response": {
+        "status": 200,
+        "jsonBody": {
+          "status": "healthy",
+          "version": "2.1.0",
+          "uptime": "7d 12h 30m"
+        }
+      }
+    }
+  ]
+}

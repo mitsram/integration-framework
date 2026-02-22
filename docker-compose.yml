@@ -1,0 +1,16 @@
+services:
+  # ── WireMock: Service Virtualization ────────────────────────────────────
+  # Simulates App2 SOAP endpoints and Integration Layer Pub/Sub API
+  wiremock:
+    image: wiremock/wiremock:3.9.1
+    container_name: integration-wiremock
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./wiremock/mappings:/home/wiremock/mappings
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/__admin/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped

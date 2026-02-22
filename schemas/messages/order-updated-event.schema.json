@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://app1.example.com/schemas/order-updated-event.json",
+  "title": "OrderUpdatedEvent",
+  "description": "Event consumed by App1 from Integration Layer when Siebel updates an order",
+  "type": "object",
+  "required": [
+    "eventId",
+    "eventType",
+    "timestamp",
+    "source",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "type": "string",
+      "const": "OrderUpdated"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "const": "Siebel"
+    },
+    "correlationId": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["orderId", "status", "updatedFields"],
+      "properties": {
+        "orderId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Acknowledged", "Processing", "Shipped", "Delivered", "Cancelled"]
+        },
+        "updatedFields": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "updatedBy": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

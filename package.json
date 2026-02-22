@@ -1,0 +1,44 @@
+{
+  "name": "integration-framework",
+  "version": "1.0.0",
+  "description": "Integration testing framework — Hybrid Real + Virtual with Schema-Driven validation",
+  "scripts": {
+    "test": "npm run test:contract && npm run test:schema && npm run test:virtual && npm run test:staging && npm run test:e2e",
+    "test:contract": "npx jest --config jest.config.ts --testPathPattern=tests/contract",
+    "test:schema": "npx playwright test --config playwright.config.ts --project=schema-validation",
+    "test:virtual": "npx playwright test --config playwright.config.ts --project=virtual-integration",
+    "test:staging": "npx playwright test --config playwright.config.ts --project=staging-integration",
+    "test:e2e": "npx playwright test --config playwright.config.ts --project=e2e-ui",
+    "test:ci": "npm run test:contract && npm run test:schema && npm run test:virtual",
+    "test:ci:staging": "npm run test:staging",
+    "test:ci:e2e": "npm run test:e2e",
+    "wiremock:start": "docker compose up -d wiremock",
+    "wiremock:stop": "docker compose down wiremock",
+    "lint": "eslint src/ tests/ --ext .ts",
+    "pact:publish": "npx ts-node scripts/publish-pacts.ts",
+    "schema:drift-check": "npx ts-node scripts/schema-drift-check.ts"
+  },
+  "devDependencies": {
+    "@pact-foundation/pact": "^16.2.0",
+    "@playwright/test": "^1.49.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "ajv": "^8.17.0",
+    "ajv-formats": "^3.0.0",
+    "dotenv": "^16.4.0",
+    "eslint": "^10.0.1",
+    "fast-xml-parser": "^5.3.7",
+    "jest": "^25.0.0",
+    "jest-junit": "^16.0.0",
+    "snowflake-sdk": "^2.3.4",
+    "ts-jest": "^29.1.2",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.6.0",
+    "uuid": "^10.0.0",
+    "xml2js": "^0.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
